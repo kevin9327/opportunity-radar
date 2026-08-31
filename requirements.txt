@@ -1,0 +1,3 @@
+# Core server and tools need nothing beyond the standard library.
+# boto3 is optional: it turns on Bedrock-backed fit ranking (AWS Builder track).
+boto3>=1.34.0
