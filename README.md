@@ -54,13 +54,20 @@ curl -s localhost:8080/mcp -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"deadline_watch","arguments":{"interest":"artificial intelligence","within_days":30}}}'
 ```
 
-Optional — turn on Bedrock fit ranking (**AWS Builder mini challenge**):
+### Fit ranking runs on your own machine
+
+`rank_for_me` asks a model whether each opening is worth your Saturday. It
+prefers a **local model over Ollama** — no key, no account, and the sentence
+describing your situation never leaves the house. That matters when the query
+is *"grants for a family caring for a disabled child"*.
 
 ```bash
-pip install boto3 && aws configure     # any region with Bedrock access
-python -c "from radar.tools import rank_for_me; print(rank_for_me('solo dev building clinic AI','artificial intelligence health')['engine'])"
-# -> bedrock            (without credentials: local-overlap, same shape, clearly labelled)
+ollama pull llama3.1:8b      # engine: local
 ```
+
+Fallbacks are automatic and always labelled in the response: Amazon Bedrock if
+AWS credentials happen to exist, then plain keyword overlap so the radar still
+answers offline. Set `RADAR_RANK_ENGINE=local|bedrock|overlap` to pin one.
 
 ## How it fits together
 

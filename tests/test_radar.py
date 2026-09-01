@@ -93,16 +93,36 @@ class HonestyUnderFailure(unittest.TestCase):
         self.assertTrue(reply["result"]["isError"])
 
     def test_ranking_never_invents_facts(self):
-        """Model output may set score/reason; money and dates stay from source."""
+        """A model may set score/reason; money and dates stay verbatim from source."""
         from radar import rank
         opp = {"id": "111", "title": "T", "agency": "A", "summary": "s",
                "award_ceiling": 500000, "days_left": 10, "close_date": "12/31/2099"}
-        with mock.patch.object(rank, "_client", side_effect=RuntimeError("no creds")):
+        with mock.patch.object(rank, "_pick_engine", return_value=("overlap", None)):
             out = rank.rank_for_me("solo developer", [opp], top=1)
         row = out["ranked"][0]
-        self.assertTrue(out["engine"].startswith("local-overlap"))
+        self.assertEqual(out["engine"], "overlap")
         self.assertEqual(row["award_ceiling"], 500000)
         self.assertEqual(row["days_left"], 10)
+
+    def test_ranking_degrades_when_engine_dies_midway(self):
+        """A model that dies mid-run must not abort the answer."""
+        from radar import rank
+        opp = {"id": "111", "title": "T", "agency": "A", "summary": "clinic ai tools"}
+        with mock.patch.object(rank, "_pick_engine", return_value=("local", None)),              mock.patch.object(rank, "_local_score", side_effect=OSError("connection reset")):
+            out = rank.rank_for_me("solo developer building clinic ai tools", [opp], top=1)
+        self.assertEqual(out["engine"], "overlap")
+        self.assertIn("local unavailable", out["degraded_from"])
+        self.assertGreater(out["ranked"][0]["score"], 0, "fallback still scores")
+
+    def test_local_engine_parses_model_verdict(self):
+        from radar import rank
+        opp = {"id": "1", "title": "T", "agency": "A", "summary": "s", "days_left": 5}
+        reply = {"score": 91, "reason": "direct match", "blocker": ""}
+        with mock.patch.object(rank, "_pick_engine", return_value=("local", None)),              mock.patch.object(rank, "_local_score", return_value=reply):
+            out = rank.rank_for_me("p", [opp], top=1)
+        self.assertEqual(out["engine"], "local")
+        self.assertEqual(out["ranked"][0]["score"], 91)
+        self.assertEqual(out["ranked"][0]["days_left"], 5)
 
 
 class McpProtocol(unittest.TestCase):
