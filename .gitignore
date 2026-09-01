@@ -4,3 +4,11 @@ __pycache__/
 _t*.py
 _mcptest.py
 venv/
+demo/frames/
+demo/build/
+demo/part*.mp4
+demo/screen_raw.mp4
+demo/_*.jpg
+demo/_*.png
+demo/.chrome-profile/
+demo/cards/*_src.png

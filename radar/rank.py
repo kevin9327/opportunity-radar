@@ -26,6 +26,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 OLLAMA_HOST = os.environ.get("RADAR_OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("RADAR_LOCAL_MODEL", "llama3.1:8b")
@@ -86,7 +87,7 @@ def _local_available() -> bool:
 def _local_score(prompt: str) -> dict:
     body = json.dumps({
         "model": OLLAMA_MODEL, "prompt": prompt, "stream": False,
-        "format": "json", "options": {"temperature": 0.0, "num_predict": 160},
+        "format": "json", "options": {"temperature": 0.0, "num_predict": 90},
     }).encode()
     req = urllib.request.Request(f"{OLLAMA_HOST}/api/generate", data=body,
                                  headers={"Content-Type": "application/json"})
@@ -130,9 +131,14 @@ def rank_for_me(profile: str, opportunities: list[dict], top: int = 5) -> dict:
     """
     engine, client = _pick_engine()
     degraded = None
+    batch = opportunities[: max(1, min(len(opportunities), 12))]
 
-    scored = []
-    for opp in opportunities[: max(1, min(len(opportunities), 12))]:
+    def judge(opp: dict) -> dict:
+        """Score one opportunity. Falls back to overlap on its own failure."""
+        nonlocal degraded, engine, client
+        blob = " ".join(str(opp.get(k, "")) for k in ("title", "agency", "summary"))
+        if engine == "overlap":
+            return {"score": _overlap(profile, blob), "reason": "keyword overlap", "blocker": ""}
         prompt = RUBRIC.format(
             profile=profile[:400],
             title=str(opp.get("title", ""))[:200],
@@ -140,18 +146,21 @@ def rank_for_me(profile: str, opportunities: list[dict], top: int = 5) -> dict:
             applicants="; ".join(opp.get("who_can_apply") or [])[:200] or "not published",
             summary=str(opp.get("summary") or "")[:1200],
         )
-        blob = " ".join(str(opp.get(k, "")) for k in ("title", "agency", "summary"))
         try:
-            if engine == "local":
-                judged = _local_score(prompt)
-            elif engine == "bedrock":
-                judged = _bedrock_score(client, prompt)
-            else:
-                judged = {"score": _overlap(profile, blob), "reason": "keyword overlap", "blocker": ""}
+            return _local_score(prompt) if engine == "local" else _bedrock_score(client, prompt)
         except Exception as e:  # noqa: BLE001 - degrade rather than fail the turn
             degraded = f"{engine} unavailable: {type(e).__name__}"
             engine, client = "overlap", None
-            judged = {"score": _overlap(profile, blob), "reason": "keyword overlap", "blocker": ""}
+            return {"score": _overlap(profile, blob), "reason": "keyword overlap", "blocker": ""}
+
+    # Judging is one independent call per opportunity, so run them together:
+    # eight sequential local-model calls is most of a minute, which is far too
+    # long for a spoken answer.
+    with ThreadPoolExecutor(max_workers=min(6, max(1, len(batch)))) as pool:
+        verdicts = list(pool.map(judge, batch))
+
+    scored = []
+    for opp, judged in zip(batch, verdicts):
         scored.append({
             # facts stay verbatim from the source; only score/reason/blocker are model output
             "id": opp.get("id"), "title": opp.get("title"), "agency": opp.get("agency"),

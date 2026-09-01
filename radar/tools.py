@@ -228,7 +228,7 @@ def weekly_briefing(interests: str, applicant_type: str = "individual") -> dict:
     return _guard(run)
 
 
-def rank_for_me(profile: str, interest: str = "", max_candidates: int = 8, top: int = 5) -> dict:
+def rank_for_me(profile: str, interest: str = "", max_candidates: int = 5, top: int = 5) -> dict:
     """Rank live opportunities by how well they fit YOU, with a reason for each.
 
     `profile` is one sentence about the applicant: "solo developer building AI
@@ -243,10 +243,14 @@ def rank_for_me(profile: str, interest: str = "", max_candidates: int = 8, top: 
         found = find_opportunities(query, max_results=max_candidates)
         if "error" in found:
             return found
-        detailed = []
-        for row in found["opportunities"]:
-            det = opportunity_detail(row["id"])
-            detailed.append(row if "error" in det else {**row, **det})
+        # Each detail fetch is an independent HTTP call; doing them one after
+        # another is what made this feel slow enough to lose a listener.
+        from concurrent.futures import ThreadPoolExecutor
+        rows = found["opportunities"]
+        with ThreadPoolExecutor(max_workers=min(6, max(1, len(rows)))) as pool:
+            details = list(pool.map(lambda r: opportunity_detail(r["id"]), rows))
+        detailed = [row if "error" in det else {**row, **det}
+                    for row, det in zip(rows, details)]
         out = _rank(profile, detailed, top=top)
         out["searched"] = query
         out["candidates_considered"] = len(detailed)

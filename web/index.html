@@ -193,6 +193,30 @@ $("mic").onclick = () => {
   rec.start();
 };
 $("ring").onclick = () => $("mic").click();
+
+// Demo mode (?demo=1): plays a fixed set of questions through the real server,
+// one after another, so a recording shows the loop without a hand on the mouse.
+// Nothing is faked — each turn is the same fetch the buttons make.
+if (new URLSearchParams(location.search).get("demo")) {
+  const which = new URLSearchParams(location.search).get("demo");
+  const SCRIPTED = which === "rank"
+    ? ["Which openings suit a solo developer building clinic software?"]
+    : ["Any grants open for artificial intelligence?",
+       "What closes in the next 14 days for clean energy?"];
+  const typeOut = async (text) => {
+    $("q").value = "";
+    for (const ch of text) { $("q").value += ch; await new Promise(r => setTimeout(r, 28)); }
+  };
+  (async () => {
+    await new Promise(r => setTimeout(r, 1800));
+    for (const line of SCRIPTED) {
+      await typeOut(line);
+      await new Promise(r => setTimeout(r, 400));
+      await run(line);
+      await new Promise(r => setTimeout(r, 5200));
+    }
+  })();
+}
 </script>
 </body>
 </html>
