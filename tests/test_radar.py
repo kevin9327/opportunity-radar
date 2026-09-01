@@ -176,3 +176,36 @@ class LiveSource(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class VoiceRouting(unittest.TestCase):
+    """The simulator's routing must be predictable without a model running."""
+
+    def test_deadline_phrasing_routes_to_deadline_watch(self):
+        from radar.agent import route_by_keyword
+        p = route_by_keyword("What closes in the next 14 days for clean energy?")
+        self.assertEqual(p["tool"], "deadline_watch")
+        self.assertEqual(p["args"]["within_days"], 14)
+        self.assertIn("clean energy", p["args"]["interest"])
+
+    def test_plain_question_routes_to_find(self):
+        from radar.agent import route_by_keyword
+        p = route_by_keyword("Alexa, any grants open for artificial intelligence?")
+        self.assertEqual(p["tool"], "find_opportunities")
+        self.assertIn("artificial intelligence", p["args"]["interest"])
+
+    def test_spoken_reply_uses_only_returned_numbers(self):
+        from radar.agent import speak
+        said = speak("deadline_watch", {"interest": "ai", "within_days": 30, "count": 2,
+                                        "scanned": 60, "closing_soon": [
+                                            {"title": "Grant A", "days_left": 3},
+                                            {"title": "Grant B", "days_left": 9}]})
+        self.assertIn("2 openings close", said)
+        self.assertIn("3 days", said)
+        self.assertNotIn("60", said, "scanned count is context, not something to read aloud")
+
+    def test_spoken_reply_refuses_on_error(self):
+        from radar.agent import speak
+        said = speak("find_opportunities", {"error": "source_unavailable",
+                                            "say": "I could not reach the grants database."})
+        self.assertIn("could not reach", said)

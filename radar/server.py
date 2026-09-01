@@ -19,7 +19,11 @@ import secrets
 import typing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from pathlib import Path
+
 from .tools import ALL_TOOLS
+
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 PROTOCOL_VERSION = "2025-11-25"
 SERVER_INFO = {"name": "opportunity-radar", "title": "Opportunity Radar", "version": "0.1.0"}
@@ -151,11 +155,24 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._send(204, extra={"Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS"})
 
+    def _serve_web(self, path: str) -> bool:
+        """Serve the Alexa+ simulator (web/) so the whole loop runs from one process."""
+        rel = "index.html" if path in ("", "/") else path.lstrip("/")
+        target = (WEB_DIR / rel).resolve()
+        if not str(target).startswith(str(WEB_DIR.resolve())) or not target.is_file():
+            return False
+        ctype = {"html": "text/html; charset=utf-8", "js": "text/javascript",
+                 "css": "text/css", "svg": "image/svg+xml"}.get(target.suffix.lstrip("."), "text/plain")
+        self._send(200, target.read_bytes(), ctype)
+        return True
+
     def do_GET(self):
         if self.path.rstrip("/") in ("/health", "/healthz"):
             return self._send(200, json.dumps({"ok": True, "tools": len(TOOL_LIST),
                                                "protocol": PROTOCOL_VERSION}).encode())
         if not self.path.startswith("/mcp"):
+            if self._serve_web(self.path.split("?")[0]):
+                return None
             return self._send(404, b'{"error":"not found"}')
         # SSE stream: opened by clients that want server-initiated messages.
         self.send_response(200)
@@ -175,6 +192,22 @@ class Handler(BaseHTTPRequestHandler):
         self._send(204)
 
     def do_POST(self):
+        if self.path.startswith("/ask"):
+            # The simulator's one endpoint: an utterance in, a spoken answer and
+            # the exact tool call out. It goes through the same tools MCP exposes.
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                utterance = json.loads(self.rfile.read(n) or b"{}").get("utterance", "")
+            except (ValueError, TypeError):
+                return self._send(400, b'{"error":"bad request"}')
+            from .agent import ask
+            try:
+                payload = ask(utterance)
+            except Exception as e:  # noqa: BLE001 - the demo must not white-screen
+                payload = {"utterance": utterance, "tool": "-", "router": "-", "arguments": {},
+                           "say": "Something went wrong on my side, so I have no numbers for you.",
+                           "result": {"error": type(e).__name__, "detail": str(e)}}
+            return self._send(200, json.dumps(payload, ensure_ascii=False).encode())
         if not self.path.startswith("/mcp"):
             return self._send(404, b'{"error":"not found"}')
         try:

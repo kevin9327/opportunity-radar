@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opportunity Radar — Alexa+ simulator</title>
+<style>
+  :root{
+    --bg:#08111c; --panel:#0f1c2e; --line:#1d304a;
+    --ink:#e8eff7; --dim:#8ba3bf; --cyan:#31d0f5; --deep:#1767ff; --ok:#38d39f; --warn:#ffb454;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 700px at 50% -10%,#12263f 0%,var(--bg) 60%);
+       color:var(--ink);font:16px/1.55 "Segoe UI",system-ui,-apple-system,sans-serif;min-height:100vh}
+  header{display:flex;align-items:center;gap:14px;padding:22px 28px;border-bottom:1px solid var(--line)}
+  .dot{width:12px;height:12px;border-radius:50%;background:var(--cyan);box-shadow:0 0 14px var(--cyan)}
+  header h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.2px}
+  header .sub{color:var(--dim);font-size:13px;margin-left:auto;text-align:right}
+  main{max-width:960px;margin:0 auto;padding:30px 24px 60px}
+
+  /* the ring: Alexa's whole visual identity is this one shape */
+  .ring{width:190px;height:190px;margin:14px auto 6px;border-radius:50%;position:relative;
+        border:3px solid #17324f;display:grid;place-items:center;transition:.3s}
+  .ring::after{content:"";position:absolute;inset:-3px;border-radius:50%;
+        background:conic-gradient(from 0deg,var(--deep),var(--cyan),var(--deep));
+        opacity:0;transition:opacity .3s;filter:blur(3px);z-index:-1}
+  .ring.live::after{opacity:1;animation:spin 2.4s linear infinite}
+  .ring.live{border-color:transparent}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .ring .state{color:var(--dim);font-size:13px;letter-spacing:.14em;text-transform:uppercase}
+
+  .say{max-width:720px;margin:18px auto 0;text-align:center;font-size:22px;line-height:1.5;min-height:66px}
+  .heard{text-align:center;color:var(--dim);font-size:14px;min-height:20px}
+
+  .bar{display:flex;gap:10px;max-width:720px;margin:24px auto 0}
+  input{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--ink);
+        border-radius:11px;padding:14px 16px;font-size:15px;outline:none}
+  input:focus{border-color:var(--cyan)}
+  button{background:var(--deep);color:#fff;border:0;border-radius:11px;padding:0 20px;
+         font-size:15px;font-weight:600;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+  button:disabled{opacity:.45;cursor:default}
+
+  .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:16px auto 0;max-width:760px}
+  .chip{background:#122439;border:1px solid var(--line);border-radius:999px;padding:7px 14px;
+        font-size:13px;color:var(--dim);cursor:pointer}
+  .chip:hover{color:var(--ink);border-color:var(--cyan)}
+
+  .trace{margin:30px auto 0;max-width:820px;background:var(--panel);border:1px solid var(--line);
+         border-radius:14px;overflow:hidden;display:none}
+  .trace.on{display:block}
+  .trace h2{margin:0;padding:12px 18px;font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+            color:var(--dim);border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center}
+  .pill{background:#0b2a3f;color:var(--cyan);border-radius:999px;padding:2px 10px;font-size:11px;letter-spacing:.04em}
+  .pill.ok{background:#0d2e24;color:var(--ok)}
+  pre{margin:0;padding:16px 18px;font:12.5px/1.6 ui-monospace,Consolas,monospace;color:#bcd4ea;
+      max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  .cards{display:grid;gap:10px;padding:14px 18px 18px}
+  .card{border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:#0c1829}
+  .card a{color:var(--cyan);text-decoration:none;font-weight:600}
+  .card .meta{color:var(--dim);font-size:13px;margin-top:4px}
+  .tag{display:inline-block;background:#13293f;border-radius:6px;padding:1px 7px;font-size:12px;color:var(--warn)}
+  footer{color:var(--dim);font-size:12.5px;text-align:center;margin-top:34px;line-height:1.8}
+  a.plain{color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <h1>Opportunity Radar <span style="color:var(--dim);font-weight:400">— Alexa+ simulator</span></h1>
+  <span class="sub">every answer is a live MCP tool call<br>tools run against grants.gov</span>
+</header>
+
+<main>
+  <div class="ring" id="ring"><span class="state" id="state">tap to speak</span></div>
+  <div class="heard" id="heard"></div>
+  <div class="say" id="say">Ask what public funding you can actually apply for.</div>
+
+  <div class="bar">
+    <input id="q" placeholder="Alexa, any grants open for artificial intelligence?" autocomplete="off">
+    <button id="send">Ask</button>
+    <button id="mic" class="ghost" title="Speak">🎙</button>
+  </div>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="trace" id="trace">
+    <h2>MCP call <span class="pill" id="toolName">—</span><span class="pill ok" id="routerName">—</span>
+        <span style="margin-left:auto;color:var(--dim);text-transform:none;letter-spacing:0" id="took"></span></h2>
+    <div class="cards" id="cards"></div>
+    <pre id="raw"></pre>
+  </div>
+
+  <footer>
+    Fit ranking runs on this machine through Ollama — no API key, no cloud account,
+    and your question never leaves the house.<br>
+    <a class="plain" href="https://github.com/kevin9327/opportunity-radar">github.com/kevin9327/opportunity-radar</a>
+  </footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const EXAMPLES = [
+  "Any grants open for artificial intelligence?",
+  "What closes in the next 14 days for clean energy?",
+  "Which openings suit a solo developer building clinic software?",
+  "Anything for rural health right now?",
+  "What should I act on this week?"
+];
+EXAMPLES.forEach(t => {
+  const c = document.createElement("span");
+  c.className = "chip"; c.textContent = t;
+  c.onclick = () => { $("q").value = t; run(t); };
+  $("chips").appendChild(c);
+});
+
+function setState(txt, live){
+  $("state").textContent = txt;
+  $("ring").classList.toggle("live", !!live);
+}
+
+function speak(text){
+  if (!window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.02; u.pitch = 1.0; u.lang = "en-US";
+  speechSynthesis.speak(u);
+}
+
+function card(row){
+  const d = document.createElement("div");
+  d.className = "card";
+  const days = row.days_left === null || row.days_left === undefined
+      ? '<span class="tag">no published deadline</span>'
+      : `closes in <b>${row.days_left}</b> days`;
+  const score = row.score !== undefined ? ` · fit <b>${row.score}</b>/100` : "";
+  const why = row.reason ? `<div class="meta">“${row.reason}”</div>` : "";
+  d.innerHTML = `<a href="${row.url}" target="_blank" rel="noopener">${row.title}</a>
+    <div class="meta">${row.agency || ""} · ${days}${score}</div>${why}`;
+  return d;
+}
+
+function render(data, ms){
+  $("trace").classList.add("on");
+  $("toolName").textContent = data.tool;
+  $("routerName").textContent = "routed by " + data.router;
+  $("took").textContent = ms + " ms";
+  const res = data.result || {};
+  const rows = res.opportunities || res.closing_soon || res.ranked || res.closing_first || [];
+  $("cards").innerHTML = "";
+  rows.slice(0, 5).forEach(r => $("cards").appendChild(card(r)));
+  $("raw").textContent = JSON.stringify({ tool: data.tool, arguments: data.arguments, result: res }, null, 1);
+}
+
+let busy = false;
+async function run(text){
+  if (busy || !text.trim()) return;
+  busy = true;
+  $("heard").textContent = "“" + text + "”";
+  $("say").textContent = "";
+  setState("thinking", true);
+  const t0 = performance.now();
+  try{
+    const r = await fetch("/ask", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ utterance: text })
+    });
+    const data = await r.json();
+    const ms = Math.round(performance.now() - t0);
+    $("say").textContent = data.say;
+    render(data, ms);
+    speak(data.say);
+  }catch(e){
+    $("say").textContent = "I could not reach the radar server.";
+  }finally{
+    busy = false; setState("tap to speak", false);
+  }
+}
+
+$("send").onclick = () => run($("q").value);
+$("q").addEventListener("keydown", e => { if (e.key === "Enter") run($("q").value); });
+
+// Real voice input where the browser supports it (Chrome/Edge).
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+$("mic").onclick = () => {
+  if (!SR){ $("say").textContent = "This browser has no speech recognition — type instead."; return; }
+  const rec = new SR();
+  rec.lang = "en-US"; rec.interimResults = false; rec.maxAlternatives = 1;
+  setState("listening", true);
+  rec.onresult = e => { const t = e.results[0][0].transcript; $("q").value = t; run(t); };
+  rec.onerror = () => setState("tap to speak", false);
+  rec.onend = () => { if (!busy) setState("tap to speak", false); };
+  rec.start();
+};
+$("ring").onclick = () => $("mic").click();
+</script>
+</body>
+</html>
