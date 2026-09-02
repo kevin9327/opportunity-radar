@@ -89,11 +89,15 @@ off the wire while debugging.
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -v     # 13 offline
-RADAR_LIVE=1 python -m unittest discover -s tests   # + 2 against grants.gov
+python -m unittest discover -s tests -v     # 19 offline, 2 live skipped
+RADAR_LIVE=1 python -m unittest discover -s tests   # all 21, incl. grants.gov
 ```
 
 CI runs the offline suite on every push and the live-source suite weekly, so a
 silent API change shows up as a red build rather than a wrong answer.
+
+The three problems that cost me the most time are written up in
+[FRICTION_LOG.md](FRICTION_LOG.md) — two of them shipped as silent wrong
+answers before I caught them, and both are now pinned by tests.
 
 MIT © 2026 kevin9327
